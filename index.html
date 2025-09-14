@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Tomar/Subir foto y enviar a Make</title>
+<style>
+  :root{
+    --bg:#0f1724;
+    --card:#0b1220;
+    --accent:#06b6d4;
+    --muted:#94a3b8;
+    --white:#f8fafc;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    background: linear-gradient(180deg,#071026 0%, #021022 100%);
+    color:var(--white);
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+  .card{
+    width:100%;
+    max-width:520px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:var(--radius);
+    padding:18px;
+    box-shadow: 0 6px 30px rgba(2,6,23,0.6);
+    border: 1px solid rgba(255,255,255,0.03);
+  }
+  h1{
+    margin:0 0 8px 0;
+    font-size:20px;
+    letter-spacing:-0.2px;
+  }
+  p.lead{margin:0 0 12px 0;color:var(--muted);font-size:13px}
+  .preview-wrap{
+    border-radius:12px;
+    overflow:hidden;
+    background:#071428;
+    min-height:220px;
+    display:grid;
+    place-items:center;
+    margin-bottom:12px;
+  }
+  img#preview{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .controls{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .btn{
+    background:transparent;
+    border:1px solid rgba(255,255,255,0.06);
+    color:var(--white);
+    padding:10px 12px;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:600;
+    font-size:14px;
+    display:inline-flex;
+    gap:8px;
+    align-items:center;
+  }
+  .btn.primary{
+    background:linear-gradient(90deg, rgba(6,182,212,0.12), rgba(59,130,246,0.08));
+    border:1px solid rgba(6,182,212,0.2);
+    color:var(--accent);
+  }
+  .btn:disabled{opacity:0.5;cursor:default}
+  .status{
+    font-size:13px;color:var(--muted);margin-bottom:8px;
+  }
+  .small{font-size:12px;color:var(--muted)}
+  input[type=file]{
+    display:none;
+  }
+  .footer{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:8px;
+    margin-top:6px;
+  }
+  .linkish{color:var(--muted);font-size:13px}
+  .spinner{
+    border:3px solid rgba(255,255,255,0.06);
+    border-top:3px solid var(--accent);
+    border-radius:50%;
+    width:18px;height:18px;
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* responsive small */
+  @media (max-width:420px){
+    .card{padding:14px}
+    h1{font-size:18px}
+  }
+</style>
+</head>
+<body>
+  <main class="card" role="main">
+    <h1>Foto — subir / usar cámara</h1>
+    <p class="lead">Toma una foto con la cámara del móvil o selecciona una imagen. Verás un preview y podrás enviarla a tu webhook de Make.</p>
+
+    <div class="preview-wrap" aria-live="polite">
+      <img id="preview" alt="Vista previa de la foto" src="" style="display:none" />
+      <div id="placeholder" style="padding:20px;text-align:center;color:var(--muted);">
+        <div style="font-size:28px;margin-bottom:6px">📷</div>
+        <div class="small">No hay imagen seleccionada</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <!-- Este input permite capturar con cámara en móviles (capture="environment") -->
+      <input type="file" accept="image/*" id="fileInput" capture="environment" />
+      <label for="fileInput" class="btn primary" id="takeBtn">📸 Tomar / Seleccionar foto</label>
+
+      <button class="btn" id="removeBtn" disabled>🧹 Quitar</button>
+
+      <button class="btn" id="sendBtn" disabled>🚀 Enviar a Make</button>
+    </div>
+
+    <div id="status" class="status">Estado: esperando imagen</div>
+
+    <div class="footer">
+      <div class="small">Formato: JPG/PNG — Tamaño recomendado &lt; 5 MB</div>
+      <div class="linkish">Asegúrate de cambiar la URL del webhook en el código</div>
+    </div>
+  </main>
+
+<script>
+/*
+  Cambia esta URL por la de tu webhook de Make.
+  Ejemplo Make webhook: https://hook.integromat.com/xxxxxxxxxxxxxxxx
+*/
+const WEBHOOK_URL = "https://hook.integromat.com/REEMPLAZA_AQUI_TU_WEBHOOK";
+
+const fileInput = document.getElementById('fileInput');
+const preview = document.getElementById('preview');
+const placeholder = document.getElementById('placeholder');
+const sendBtn = document.getElementById('sendBtn');
+const removeBtn = document.getElementById('removeBtn');
+const status = document.getElementById('status');
+
+let currentFile = null;
+
+fileInput.addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return clearPreview();
+  if (!f.type.startsWith('image/')) {
+    alert('Por favor selecciona un archivo de imagen.');
+    clearPreview();
+    return;
+  }
+
+  // Limit size example (optional)
+  const maxBytes = 8 * 1024 * 1024; // 8 MB
+  if (f.size > maxBytes) {
+    if (!confirm('La imagen supera 8MB. ¿Deseas continuar igualmente?')) {
+      clearPreview();
+      return;
+    }
+  }
+
+  currentFile = f;
+  showPreview(f);
+  status.textContent = `Estado: imagen lista (${Math.round(f.size/1024)} KB)`;
+  sendBtn.disabled = false;
+  removeBtn.disabled = false;
+});
+
+function showPreview(file){
+  // Usa URL.createObjectURL para preview rápido
+  const url = URL.createObjectURL(file);
+  preview.src = url;
+  preview.style.display = 'block';
+  placeholder.style.display = 'none';
+}
+
+function clearPreview(){
+  if (preview.src) URL.revokeObjectURL(preview.src);
+  preview.src = '';
+  preview.style.display = 'none';
+  placeholder.style.display = 'block';
+  currentFile = null;
+  sendBtn.disabled = true;
+  removeBtn.disabled = true;
+  status.textContent = 'Estado: esperando imagen';
+  fileInput.value = ""; // permit re-seleccionar la misma imagen si se desea
+}
+
+removeBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  clearPreview();
+});
+
+// Enviar la imagen por fetch como FormData
+sendBtn.addEventListener('click', async (e) => {
+  if (!currentFile) return;
+  sendBtn.disabled = true;
+  removeBtn.disabled = true;
+  status.innerHTML = 'Enviando... <span class="spinner" aria-hidden="true"></span>';
+
+  try {
+    const form = new FormData();
+    // 'photo' será la clave que recibirá Make
+    form.append('photo', currentFile, currentFile.name);
+    // Puedes añadir otros campos si los necesitas:
+    form.append('filename', currentFile.name);
+    form.append('timestamp', new Date().toISOString());
+
+    // fetch POST
+    const res = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      body: form,
+      // No establezcas 'Content-Type' manualmente para FormData
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(()=>res.statusText);
+      throw new Error(`Respuesta HTTP ${res.status}: ${text}`);
+    }
+
+    // Si Make devuelve JSON, podrías parsearlo
+    let reply = '';
+    try {
+      const json = await res.json();
+      reply = ' — Respuesta: ' + (JSON.stringify(json));
+    } catch (err) {
+      // no JSON
+      reply = '';
+    }
+
+    status.textContent = 'Enviado correctamente.' + reply;
+    // opcional: limpiar preview si quieres
+    // clearPreview();
+  } catch (err) {
+    console.error(err);
+    status.textContent = 'Error al enviar: ' + (err.message || err);
+    alert('Error al enviar la imagen. Revisa la consola y la URL del webhook. Si hay un error CORS, Make puede requerir configuración o usar un proxy.');
+  } finally {
+    sendBtn.disabled = false;
+    removeBtn.disabled = false;
+  }
+});
+
+/*
+  Notas técnicas importantes (resumidas):
+  - capture="environment" en el input sugiere usar la cámara trasera en móviles.
+  - fetch no ofrece progreso de subida; si necesitas barra de progreso, usa XMLHttpRequest con upload.onprogress.
+  - Si recibes error CORS en el navegador, revisa las políticas de Make o usa un servidor proxy/server-side para reenviar.
+  - Make/integrations típicamente aceptan multipart/form-data. En Make puedes usar un módulo "Webhook" que recibe archivos.
+*/
+</script>
+</body>
+</html>
