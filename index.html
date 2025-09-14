@@ -88,3 +88,74 @@
 
       <label for="cajero">Cajero/a</label>
       <input type="text" id="cajero" name="cajero" placeholder="Nombre del cajero" required>
+
+      <label for="foto">Foto del ticket</label>
+      <input type="file" id="foto" name="foto" accept="image/*" capture="environment" required>
+      <img id="preview" alt="Vista previa">
+
+      <label for="notas">Notas (opcional)</label>
+      <textarea id="notas" name="notas" rows="3" placeholder="Ej: luz baja, ticket arrugado..."></textarea>
+
+      <button type="button" class="secondary" onclick="resetForm()">Retomar</button>
+      <button type="submit">Enviar a Make</button>
+
+      <p class="status" id="status">Esperando captura...</p>
+    </form>
+  </div>
+
+  <script>
+    const fotoInput = document.getElementById('foto');
+    const preview = document.getElementById('preview');
+    const status = document.getElementById('status');
+
+    // Mostrar vista previa
+    fotoInput.addEventListener('change', () => {
+      const file = fotoInput.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = e => {
+          preview.src = e.target.result;
+          preview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // Resetear formulario
+    function resetForm() {
+      document.getElementById("ticketForm").reset();
+      preview.style.display = 'none';
+      status.textContent = "Esperando captura...";
+    }
+
+    // Enviar a webhook
+    document.getElementById('ticketForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const formData = new FormData();
+      formData.append('caja', document.getElementById('caja').value);
+      formData.append('cajero', document.getElementById('cajero').value);
+      formData.append('notas', document.getElementById('notas').value);
+      formData.append('foto', fotoInput.files[0]);
+
+      status.textContent = "Enviando...";
+
+      try {
+        const response = await fetch("TU_WEBHOOK_DE_MAKE", {
+          method: "POST",
+          body: formData
+        });
+
+        if (response.ok) {
+          status.textContent = "✅ Enviado correctamente a Make";
+        } else {
+          status.textContent = "❌ Error al enviar";
+        }
+      } catch (error) {
+        console.error(error);
+        status.textContent = "⚠️ Fallo de conexión";
+      }
+    });
+  </script>
+</body>
+</html>
